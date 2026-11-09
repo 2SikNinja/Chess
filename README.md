@@ -11,7 +11,7 @@
 ![Swing](https://img.shields.io/badge/UI-Swing-5382a1)
 ![Tests](https://img.shields.io/badge/tests-JUnit%205-25a162)
 
-[**Play in your browser**](https://2sikninja.github.io/chess/) · [Run the desktop app](#getting-started) · [How the AI works](#how-the-ai-works)
+[**Play in your browser**](https://2sikninja.github.io/Chess/) · [Run the desktop app](#getting-started) · [How the AI works](#how-the-ai-works)
 
 <img src="docs/screenshots/demo.gif" width="720" alt="A game against the computer: selecting pieces, legal move hints, and the AI replying">
 
@@ -171,7 +171,7 @@ The browser game is a static site in `docs/`. To put it online with GitHub Pages
 
 1. On GitHub, open **Settings → Pages**.
 2. Under **Build and deployment**, choose **Deploy from a branch**, select `master` and the `/docs` folder, and save.
-3. After a minute it is live at `https://2sikninja.github.io/chess/`.
+3. After a minute it is live at `https://2sikninja.github.io/Chess/`.
 
 To try it locally, run `python3 -m http.server` inside `docs/` and open `http://localhost:8000`.
 
