@@ -1,0 +1,1166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Minimax Chess</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Play chess in your browser against a minimax AI or a friend.">
+<link rel="icon" href="pieces/wknight.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Chivo:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  /* Layout: board column with a player bar above and below, controls in a side column that drops below the board on phones. */
+  :root {
+    color-scheme: dark;
+    /* Walnut panels and the classic board colors, shared with the desktop app */
+    --ground: #1f1d1a;
+    --panel: #2b2825;
+    --raised: #38342f;
+    --line: #48423b;
+    --ink: #ede8e1;
+    --muted: #a59c91;
+    --accent: #7fa650;
+    --accent-ink: #f7fbf1;
+    --danger: #c95050;
+    --light-square: #f0d9b5;
+    --dark-square: #b58863;
+    --last-move: rgba(205, 210, 106, 0.6);
+    --selected: rgba(130, 151, 105, 0.85);
+    --hint: rgba(20, 85, 30, 0.38);
+    --check: #e03030;
+
+    --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Chivo", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+    --radius: 10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  html, body { background: var(--ground); color: var(--ink); margin: 0; }
+  body {
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 28px;
+  }
+
+  .app { max-width: 1040px; margin: 0 auto; display: grid; gap: 20px; }
+
+  /* ---- Header ---- */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand img { width: 46px; height: 46px; background: var(--panel); border-radius: var(--radius); padding: 4px; }
+  .brand h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.75rem;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .brand p { margin: 4px 0 0; color: var(--muted); font-size: 0.875rem; }
+  .top a {
+    color: var(--muted);
+    font-size: 0.875rem;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+  }
+  .top a:hover { color: var(--ink); border-color: var(--muted); }
+
+  /* ---- Main layout ---- */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(280px, 330px);
+    gap: 22px;
+    align-items: start;
+    justify-content: center;
+  }
+  .board-col {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    /* As large as fits beside the controls, but never taller than the screen */
+    width: min(620px, max(320px, calc(100svh - 230px)));
+    max-width: 100%;
+  }
+
+  /* ---- Player bars ---- */
+  .player {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+  .player .avatar { width: 32px; height: 32px; border-radius: 7px; background: var(--raised); padding: 2px; flex: none; }
+  .player .who { display: grid; min-width: 0; flex: 1; }
+  .player .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player .loot { display: flex; align-items: center; min-height: 18px; color: var(--muted); font-size: 0.8125rem; }
+  .player .loot img { width: 18px; height: 18px; margin-right: -7px; }
+  .player .loot img.gap { margin-left: 9px; }
+  .player .loot span { margin-left: 12px; font-variant-numeric: tabular-nums; }
+  .player .turn {
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  .player.active .turn { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  .player.thinking .turn::after { content: ""; display: inline-block; width: 1.4em; text-align: left; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+  /* ---- Board ---- */
+  .board-wrap { position: relative; width: 100%; aspect-ratio: 1; max-width: 100%; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  .sq {
+    position: relative;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: var(--light-square);
+    cursor: default;
+    container-type: size;
+  }
+  .sq.dark { background: var(--dark-square); }
+  .sq.last::before, .sq.sel::before, .sq.check::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .sq.last::before { background: var(--last-move); }
+  .sq.sel::before { background: var(--selected); }
+  .sq.check::before { background: radial-gradient(circle, var(--check) 0%, rgba(224, 48, 48, 0.7) 40%, rgba(224, 48, 48, 0) 72%); }
+  .sq.movable { cursor: grab; }
+  .sq.target { cursor: pointer; }
+  .sq img {
+    position: absolute;
+    inset: 6%;
+    width: 88%;
+    height: 88%;
+    pointer-events: none;
+    -webkit-user-drag: none;
+  }
+  .sq.lifted img { opacity: 0.25; }
+  .sq.target::after {
+    content: "";
+    position: absolute;
+    left: 35%;
+    top: 35%;
+    width: 30%;
+    height: 30%;
+    border-radius: 50%;
+    background: var(--hint);
+    pointer-events: none;
+  }
+  .sq.target.capture::after {
+    left: 3%;
+    top: 3%;
+    width: 94%;
+    height: 94%;
+    background: transparent;
+    border: 7cqw solid var(--hint);
+  }
+  .sq:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; z-index: 2; }
+  .coord {
+    position: absolute;
+    font: 700 max(9px, 14cqw)/1 var(--font-body);
+    pointer-events: none;
+  }
+  .coord.rank { left: 5%; top: 5%; }
+  .coord.file { right: 6%; bottom: 5%; }
+  .sq .coord { color: var(--dark-square); }
+  .sq.dark .coord { color: var(--light-square); }
+
+  .ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 50;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+  }
+
+  /* ---- Overlays on the board ---- */
+  .overlay, .promo {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 10px;
+    border-radius: 6px;
+    background: rgba(18, 16, 14, 0.72);
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(1.6rem, 6vw, 2.6rem);
+    letter-spacing: -0.02em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .overlay p { margin: 0; color: var(--light-square); font-size: 1.05rem; }
+  .overlay .row { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
+  .promo p { margin: 0; font-weight: 700; }
+  .promo .choices { display: flex; gap: 8px; }
+  .promo button {
+    width: clamp(56px, 14vw, 76px);
+    aspect-ratio: 1;
+    border-radius: var(--radius);
+    border: 0;
+    background: var(--light-square);
+    cursor: pointer;
+    padding: 6px;
+  }
+  .promo button:hover, .promo button:focus-visible { background: var(--accent); outline: none; }
+  .promo button img { width: 100%; height: 100%; }
+
+  /* ---- Side column ---- */
+  .side { display: grid; gap: 14px; min-width: 0; }
+  .status h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.35rem; margin: 0; letter-spacing: -0.01em; }
+  .status p { margin: 2px 0 0; color: var(--muted); font-size: 0.8125rem; min-height: 1.2em; font-variant-numeric: tabular-nums; }
+
+  .card { background: var(--panel); border-radius: var(--radius); padding: 14px; display: grid; gap: 12px; }
+  .label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .field { display: grid; gap: 6px; }
+  .segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--ground); border-radius: 8px; padding: 3px; gap: 3px; }
+  .segmented button {
+    border: 0;
+    border-radius: 6px;
+    padding: 7px 6px;
+    background: transparent;
+    color: var(--muted);
+    font: 500 0.8125rem var(--font-body);
+    cursor: pointer;
+  }
+  .segmented button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+  .segmented button:hover { color: var(--ink); }
+  .segmented button:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .segmented button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .level-note { margin: 0; color: var(--muted); font-size: 0.75rem; }
+
+  .btn {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--raised);
+    color: var(--ink);
+    font: 700 0.875rem var(--font-body);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--line); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger-armed { background: var(--danger); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .moves { padding: 0; gap: 0; overflow: hidden; }
+  .moves header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; }
+  .move-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 6px;
+    max-height: 230px;
+    min-height: 120px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+  }
+  .move-list li { display: grid; grid-template-columns: 42px 1fr 1fr; align-items: center; padding: 3px 14px; }
+  .move-list li:nth-child(even) { background: rgba(0, 0, 0, 0.16); }
+  .move-list .num { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .move-list .ply { justify-self: start; padding: 1px 6px; border-radius: 5px; }
+  .move-list .ply.latest { background: var(--raised); }
+  .move-list .empty { display: block; color: var(--muted); font-family: var(--font-body); padding: 6px 14px 12px; }
+  .link-btn { border: 0; background: none; color: var(--muted); font: 500 0.8125rem var(--font-body); cursor: pointer; padding: 2px 4px; }
+  .link-btn:hover { color: var(--ink); }
+
+  details.fen { background: var(--panel); border-radius: var(--radius); padding: 10px 14px; }
+  details.fen summary { cursor: pointer; color: var(--muted); font-size: 0.8125rem; }
+  details.fen code {
+    display: block;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+
+  .about { color: var(--muted); font-size: 0.8125rem; max-width: 65ch; margin: 0; }
+  .about a { color: var(--ink); }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: var(--ground);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    z-index: 60;
+  }
+
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .board-col { width: min(100%, 620px); justify-self: center; }
+    .side { width: min(100%, 620px); justify-self: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .player.thinking .turn::after { animation: none; content: "..."; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <img id="brandIcon" alt="">
+      <div>
+        <h1>Minimax Chess</h1>
+        <p>Play a friend, or an AI that searches up to four moves ahead.</p>
+      </div>
+    </div>
+    <a href="https://github.com/2SikNinja/chess" target="_blank" rel="noopener">Source on GitHub</a>
+  </header>
+
+  <main class="layout">
+    <section class="board-col" aria-label="Game">
+      <div class="player" id="playerTop"></div>
+      <div class="board-wrap">
+        <div class="board" id="board" aria-label="Chess board"></div>
+        <div class="overlay" id="overlay" hidden>
+          <h2 id="overlayTitle"></h2>
+          <p id="overlayText"></p>
+          <div class="row">
+            <button class="btn primary" id="overlayAgain" type="button">Play again</button>
+            <button class="btn" id="overlayReview" type="button">Review board</button>
+          </div>
+        </div>
+        <div class="promo" id="promo" hidden>
+          <p>Promote your pawn to</p>
+          <div class="choices" id="promoChoices"></div>
+          <button class="link-btn" id="promoCancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div class="player" id="playerBottom"></div>
+    </section>
+
+    <aside class="side">
+      <div class="status" aria-live="polite">
+        <h2 id="status">White to move</h2>
+        <p id="detail"></p>
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <span class="label" id="opponentLabel">Opponent</span>
+          <div class="segmented" role="group" aria-labelledby="opponentLabel">
+            <button type="button" id="optComputer" data-mode="ai">Computer</button>
+            <button type="button" id="optFriend" data-mode="friend">Friend</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label" id="colorLabel">Play as</span>
+          <div class="segmented" role="group" aria-labelledby="colorLabel">
+            <button type="button" id="optWhite" data-color="w">White</button>
+            <button type="button" id="optBlack" data-color="b">Black</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label" id="levelLabel">Computer level</span>
+          <div class="segmented" role="group" aria-labelledby="levelLabel">
+            <button type="button" id="lvl1" data-depth="1">Easy</button>
+            <button type="button" id="lvl2" data-depth="2">Medium</button>
+            <button type="button" id="lvl3" data-depth="3">Hard</button>
+            <button type="button" id="lvl4" data-depth="4">Expert</button>
+          </div>
+          <p class="level-note" id="levelNote"></p>
+        </div>
+        <button class="btn primary" id="newGame" type="button">New game</button>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="undo" type="button">Undo</button>
+        <button class="btn" id="flip" type="button">Flip board</button>
+        <button class="btn" id="resign" type="button">Resign</button>
+        <button class="btn" id="copyPgn" type="button">Copy PGN</button>
+      </div>
+
+      <section class="card moves" aria-label="Moves">
+        <header>
+          <span class="label">Moves</span>
+          <span class="label" id="plyCount"></span>
+        </header>
+        <ol class="move-list" id="moveList"></ol>
+      </section>
+
+      <details class="fen">
+        <summary>Position as FEN</summary>
+        <code id="fenText"></code>
+      </details>
+    </aside>
+  </main>
+
+  <p class="about">
+    The computer uses minimax search with alpha-beta pruning, capture-first move ordering and a
+    quiescence search, scoring positions by material and piece-square tables. It runs in a background
+    worker so the board stays responsive. This is the browser version of a
+    <a href="https://github.com/2SikNinja/chess" target="_blank" rel="noopener">Java Swing chess game</a>.
+  </p>
+</div>
+
+<script src="engine.js"></script>
+<script>
+  // Replaced with data: URIs when the page is bundled into a single file
+  const PIECE_DATA = null;
+
+  const E = createEngine();
+  const LEVELS = {
+    1: 'Looks one move ahead. Grabs material, misses tactics.',
+    2: 'Looks two moves ahead. Sees your direct replies.',
+    3: 'Looks three moves ahead. Usually under a second.',
+    4: 'Looks four moves ahead. Can take a few seconds.'
+  };
+  const PIECE_NAMES = { K: 'king', Q: 'queen', R: 'rook', B: 'bishop', N: 'knight', P: 'pawn' };
+  const START_COUNTS = { Q: 1, R: 2, B: 2, N: 2, P: 8 };
+  const MIN_AI_DELAY = 350;
+  const STORAGE_KEY = 'minimax-chess';
+
+  const $ = (id) => document.getElementById(id);
+  const pieceSrc = (piece) => {
+    const name = (E.colorOf(piece) === 'w' ? 'w' : 'b') + PIECE_NAMES[E.typeOf(piece)];
+    return PIECE_DATA ? PIECE_DATA[name] : 'pieces/' + name + '.png';
+  };
+
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+
+  const settings = { mode: 'ai', human: 'w', depth: 3 };   // what the next "New game" will use
+  let game;          // { board, sans, ucis, keys, settings, result }
+  let flipped = false;
+  let selected = -1;
+  let targets = [];
+  let drag = null;
+  let searchId = 0;
+  let worker = null;
+
+  function newGameState(gameSettings) {
+    const board = new E.Board();
+    return { board, sans: [], ucis: [], keys: [board.positionKey()], settings: { ...gameSettings }, result: null };
+  }
+
+  function isAiTurn() {
+    return game.settings.mode === 'ai' && game.board.turn !== game.settings.human && !game.result;
+  }
+
+  function nameFor(color) {
+    const s = game.settings;
+    if (s.mode === 'ai') return color === s.human ? 'You' : 'Computer';
+    return color === 'w' ? 'White' : 'Black';
+  }
+
+  function gameStatus() {
+    const board = game.board;
+    if (board.legalMoves().length === 0) {
+      return board.inCheck(board.turn) ? 'checkmate' : 'stalemate';
+    }
+    if (board.hasInsufficientMaterial()) return 'insufficient material';
+    if (board.halfmove >= 100) return 'the fifty-move rule';
+    const key = game.keys[game.keys.length - 1];
+    if (game.keys.filter((k) => k === key).length >= 3) return 'threefold repetition';
+    return null;
+  }
+
+  // ---------------------------------------------------------------
+  // Playing moves
+  // ---------------------------------------------------------------
+
+  function playMove(move) {
+    game.sans.push(E.toSan(game.board, move));
+    game.ucis.push(E.toUci(move));
+    game.board.makeMove(move);
+    game.keys.push(game.board.positionKey());
+    selected = -1;
+    targets = [];
+    afterMove();
+  }
+
+  function afterMove() {
+    const status = gameStatus();
+    if (status === 'checkmate') {
+      const winner = E.opposite(game.board.turn);
+      endGame(winner === 'w' ? '1-0' : '0-1', resultTitle(winner), 'by checkmate');
+    } else if (status) {
+      endGame('1/2-1/2', 'Draw', 'by ' + status);
+    }
+    render();
+    save();
+    if (isAiTurn()) requestAiMove();
+  }
+
+  function resultTitle(winner) {
+    const name = nameFor(winner);
+    if (name === 'You') return 'You win!';
+    if (name === 'Computer') return 'Computer wins';
+    return name + ' wins';
+  }
+
+  function endGame(result, title, text) {
+    game.result = { result, title, text };
+    cancelSearch();
+    $('overlayTitle').textContent = title;
+    $('overlayText').textContent = text.charAt(0).toUpperCase() + text.slice(1);
+    $('overlay').hidden = false;
+  }
+
+  function startNewGame() {
+    cancelSearch();
+    game = newGameState(settings);
+    flipped = game.settings.mode === 'ai' && game.settings.human === 'b';
+    selected = -1;
+    targets = [];
+    $('overlay').hidden = true;
+    $('promo').hidden = true;
+    $('detail').textContent = '';
+    render();
+    save();
+    if (isAiTurn()) requestAiMove();
+  }
+
+  function undo() {
+    cancelSearch();
+    let plies = 1;
+    if (game.settings.mode === 'ai' && game.board.turn === game.settings.human) plies = 2;
+    if (game.settings.mode === 'ai' && game.result && game.board.turn !== game.settings.human) plies = 1;
+    for (let i = 0; i < plies && game.ucis.length; i++) {
+      game.board.undoMove();
+      game.sans.pop();
+      game.ucis.pop();
+      game.keys.pop();
+    }
+    game.result = null;
+    $('overlay').hidden = true;
+    $('promo').hidden = true;
+    $('detail').textContent = '';
+    selected = -1;
+    targets = [];
+    render();
+    save();
+    if (isAiTurn()) requestAiMove();
+  }
+
+  // ---------------------------------------------------------------
+  // Computer opponent (runs in a Web Worker built from engine.js)
+  // ---------------------------------------------------------------
+
+  function getWorker() {
+    if (worker) return worker;
+    try {
+      const source = 'const E = (' + createEngine.toString() + ')();\n'
+        + 'onmessage = (event) => {\n'
+        + '  const { id, fen, depth } = event.data;\n'
+        + '  const started = Date.now();\n'
+        + '  const result = E.search(new E.Board(fen), depth);\n'
+        + '  postMessage({ id, uci: result.move ? E.toUci(result.move) : null, nodes: result.nodes, ms: Date.now() - started });\n'
+        + '};';
+      worker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })));
+      worker.onmessage = (event) => onAiResult(event.data);
+    } catch (error) {
+      worker = null;
+    }
+    return worker;
+  }
+
+  function requestAiMove() {
+    const id = ++searchId;
+    const fen = game.board.fen();
+    const depth = game.settings.depth;
+    const started = Date.now();
+    render();
+    const w = getWorker();
+    if (w) {
+      w.postMessage({ id, fen, depth, started });
+    } else {
+      // No worker support: search on the main thread after the UI paints
+      setTimeout(() => {
+        const t = Date.now();
+        const result = E.search(new E.Board(fen), depth);
+        onAiResult({ id, uci: result.move ? E.toUci(result.move) : null, nodes: result.nodes, ms: Date.now() - t });
+      }, 30);
+    }
+    pendingStart = started;
+  }
+
+  let pendingStart = 0;
+
+  function onAiResult(data) {
+    if (data.id !== searchId || !isAiTurn()) return;
+    const wait = Math.max(0, MIN_AI_DELAY - (Date.now() - pendingStart));
+    setTimeout(() => {
+      if (data.id !== searchId || !isAiTurn()) return;
+      const move = game.board.legalMoves().find((m) => E.toUci(m) === data.uci);
+      if (!move) return;
+      playMove(move);
+      const time = data.ms < 1000 ? data.ms + ' ms' : (data.ms / 1000).toFixed(1) + ' s';
+      $('detail').textContent = 'Computer searched ' + data.nodes.toLocaleString() + ' positions in ' + time;
+    }, wait);
+  }
+
+  function cancelSearch() {
+    searchId++;
+    if (worker) {
+      // Stop a long search right away instead of waiting for it to finish
+      worker.terminate();
+      worker = null;
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Board interaction
+  // ---------------------------------------------------------------
+
+  function canMove(sq) {
+    const piece = game.board.squares[sq];
+    if (!piece || game.result || isAiTurn()) return false;
+    const color = E.colorOf(piece);
+    if (color !== game.board.turn) return false;
+    return game.settings.mode === 'friend' || color === game.settings.human;
+  }
+
+  function select(sq) {
+    selected = sq;
+    targets = game.board.legalMovesFrom(sq);
+  }
+
+  function clearSelection() {
+    selected = -1;
+    targets = [];
+  }
+
+  /** Handles a press on a square. Returns true if a drag may start from it. */
+  function pressSquare(sq) {
+    if (selected >= 0 && targets.some((m) => m.to === sq)) {
+      commit(sq);
+      return false;
+    }
+    if (canMove(sq)) {
+      if (selected === sq) {
+        render();
+        return true;
+      }
+      select(sq);
+      render();
+      return true;
+    }
+    clearSelection();
+    render();
+    return false;
+  }
+
+  function commit(sq) {
+    const options = targets.filter((m) => m.to === sq);
+    if (options.length === 0) return;
+    if (options.length > 1) {
+      askPromotion(options);
+      return;
+    }
+    playMove(options[0]);
+  }
+
+  function askPromotion(options) {
+    const box = $('promoChoices');
+    box.textContent = '';
+    for (const move of options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      const img = document.createElement('img');
+      img.src = pieceSrc(move.promo);
+      img.alt = PIECE_NAMES[E.typeOf(move.promo)];
+      button.append(img);
+      button.setAttribute('aria-label', 'Promote to ' + img.alt);
+      button.addEventListener('click', () => {
+        $('promo').hidden = true;
+        playMove(move);
+      });
+      box.append(button);
+    }
+    $('promo').hidden = false;
+    box.querySelector('button').focus();
+  }
+
+  function squareFromPoint(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const square = el && el.closest('.sq');
+    return square ? Number(square.dataset.sq) : -1;
+  }
+
+  function onPointerDown(event) {
+    const square = event.target.closest('.sq');
+    if (!square || event.button > 0) return;
+    const sq = Number(square.dataset.sq);
+    const draggable = pressSquare(sq);
+    if (draggable) {
+      drag = { from: sq, x: event.clientX, y: event.clientY, moved: false, ghost: null, pointer: event.pointerId };
+      $('board').setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+  }
+
+  function onPointerMove(event) {
+    if (!drag || event.pointerId !== drag.pointer) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      const size = $('board').getBoundingClientRect().width / 8;
+      const ghost = document.createElement('img');
+      ghost.className = 'ghost';
+      ghost.src = pieceSrc(game.board.squares[drag.from]);
+      ghost.style.width = ghost.style.height = size + 'px';
+      document.body.append(ghost);
+      drag.ghost = ghost;
+      document.querySelector('.sq[data-sq="' + drag.from + '"]').classList.add('lifted');
+    }
+    drag.ghost.style.left = event.clientX + 'px';
+    drag.ghost.style.top = event.clientY + 'px';
+  }
+
+  function onPointerUp(event) {
+    if (!drag || event.pointerId !== drag.pointer) return;
+    const current = drag;
+    drag = null;
+    if (current.ghost) current.ghost.remove();
+    if (current.moved) {
+      const sq = squareFromPoint(event.clientX, event.clientY);
+      if (sq >= 0 && sq !== current.from && targets.some((m) => m.to === sq)) {
+        commit(sq);
+        return;
+      }
+    }
+    render();
+  }
+
+  function onKeyDown(event) {
+    const square = event.target.closest('.sq');
+    if (!square) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      pressSquare(Number(square.dataset.sq));
+      const again = document.querySelector('.sq[data-sq="' + square.dataset.sq + '"]');
+      if (again) again.focus();
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------
+
+  function buildBoard() {
+    const board = $('board');
+    board.textContent = '';
+    for (let i = 0; i < 64; i++) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sq';
+      board.append(button);
+    }
+  }
+
+  function render() {
+    renderBoard();
+    renderPlayers();
+    renderStatus();
+    renderMoves();
+    renderControls();
+    $('fenText').textContent = game.board.fen();
+  }
+
+  function renderBoard() {
+    const board = game.board;
+    const last = board.lastMove();
+    const checkSq = board.inCheck(board.turn) ? board.kings[board.turn] : -1;
+    const targetSet = new Map(targets.map((m) => [m.to, m]));
+    const cells = $('board').children;
+    for (let i = 0; i < 64; i++) {
+      const sq = flipped ? 63 - i : i;
+      const row = sq >> 3;
+      const col = sq & 7;
+      const cell = cells[i];
+      const piece = board.squares[sq];
+      cell.dataset.sq = sq;
+      cell.className = 'sq'
+        + ((row + col) % 2 ? ' dark' : '')
+        + (last && (last.from === sq || last.to === sq) ? ' last' : '')
+        + (sq === selected ? ' sel' : '')
+        + (sq === checkSq ? ' check' : '')
+        + (canMove(sq) ? ' movable' : '')
+        + (targetSet.has(sq) ? ' target' : '')
+        + (targetSet.has(sq) && targetSet.get(sq).captured ? ' capture' : '');
+      cell.textContent = '';
+      if (piece) {
+        const img = document.createElement('img');
+        img.src = pieceSrc(piece);
+        img.alt = '';
+        img.draggable = false;
+        cell.append(img);
+      }
+      const name = E.squareName(sq);
+      cell.setAttribute('aria-label', name + (piece ? ', ' + (E.colorOf(piece) === 'w' ? 'white ' : 'black ') + PIECE_NAMES[E.typeOf(piece)] : ''));
+      if (i % 8 === 0) addCoord(cell, 'rank', name[1]);
+      if (i >= 56) addCoord(cell, 'file', name[0]);
+    }
+  }
+
+  function addCoord(cell, kind, text) {
+    const span = document.createElement('span');
+    span.className = 'coord ' + kind;
+    span.textContent = text;
+    span.setAttribute('aria-hidden', 'true');
+    cell.append(span);
+  }
+
+  function capturedBy(color) {
+    const victim = E.opposite(color);
+    const counts = {};
+    for (const piece of game.board.squares) {
+      if (piece && E.colorOf(piece) === victim) counts[E.typeOf(piece)] = (counts[E.typeOf(piece)] || 0) + 1;
+    }
+    const list = [];
+    for (const type of ['Q', 'R', 'B', 'N', 'P']) {
+      const missing = START_COUNTS[type] - (counts[type] || 0);
+      for (let i = 0; i < missing; i++) list.push(victim === 'w' ? type : type.toLowerCase());
+    }
+    return list;
+  }
+
+  function materialLead(color) {
+    let balance = 0;
+    for (const piece of game.board.squares) {
+      if (!piece) continue;
+      const value = E.VALUES[E.typeOf(piece)];
+      balance += E.colorOf(piece) === color ? value : -value;
+    }
+    return Math.max(0, Math.round(balance / 100));
+  }
+
+  function renderPlayers() {
+    const bottom = flipped ? 'b' : 'w';
+    renderPlayer($('playerBottom'), bottom);
+    renderPlayer($('playerTop'), E.opposite(bottom));
+  }
+
+  function renderPlayer(el, color) {
+    const active = !game.result && game.board.turn === color;
+    const thinking = active && isAiTurn();
+    el.className = 'player' + (active ? ' active' : '') + (thinking ? ' thinking' : '');
+    el.textContent = '';
+
+    const avatar = document.createElement('img');
+    avatar.className = 'avatar';
+    avatar.src = pieceSrc(color === 'w' ? 'K' : 'k');
+    avatar.alt = '';
+    const who = document.createElement('div');
+    who.className = 'who';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = nameFor(color);
+    const loot = document.createElement('span');
+    loot.className = 'loot';
+    let previous = null;
+    for (const piece of capturedBy(color)) {
+      const img = document.createElement('img');
+      img.src = pieceSrc(piece);
+      img.alt = '';
+      if (previous && previous !== piece) img.className = 'gap';
+      loot.append(img);
+      previous = piece;
+    }
+    const lead = materialLead(color);
+    if (lead > 0) {
+      const span = document.createElement('span');
+      span.textContent = '+' + lead;
+      loot.append(span);
+    } else if (!previous) {
+      loot.textContent = color === 'w' ? 'White' : 'Black';
+    }
+    who.append(name, loot);
+
+    const turn = document.createElement('span');
+    turn.className = 'turn';
+    turn.textContent = thinking ? 'Thinking' : active ? 'To move' : (color === 'w' ? 'White' : 'Black');
+    el.append(avatar, who, turn);
+  }
+
+  function renderStatus() {
+    let text;
+    if (game.result) {
+      text = game.result.title;
+    } else if (isAiTurn()) {
+      text = 'Computer is thinking';
+    } else {
+      const name = nameFor(game.board.turn);
+      text = name === 'You' ? 'Your move' : name + ' to move';
+      if (game.board.inCheck(game.board.turn)) text = 'Check! ' + text;
+    }
+    $('status').textContent = text;
+  }
+
+  function renderMoves() {
+    const list = $('moveList');
+    list.textContent = '';
+    $('plyCount').textContent = game.sans.length ? game.sans.length + (game.sans.length === 1 ? ' ply' : ' plies') : '';
+    if (!game.sans.length) {
+      const empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = 'Moves will appear here in algebraic notation.';
+      list.append(empty);
+      return;
+    }
+    for (let i = 0; i < game.sans.length; i += 2) {
+      const li = document.createElement('li');
+      const num = document.createElement('span');
+      num.className = 'num';
+      num.textContent = i / 2 + 1 + '.';
+      li.append(num);
+      for (let j = i; j < i + 2; j++) {
+        const span = document.createElement('span');
+        if (j < game.sans.length) {
+          span.className = 'ply' + (j === game.sans.length - 1 ? ' latest' : '');
+          span.textContent = game.sans[j];
+        }
+        li.append(span);
+      }
+      list.append(li);
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function renderControls() {
+    $('optComputer').setAttribute('aria-pressed', settings.mode === 'ai');
+    $('optFriend').setAttribute('aria-pressed', settings.mode === 'friend');
+    $('optWhite').setAttribute('aria-pressed', settings.human === 'w');
+    $('optBlack').setAttribute('aria-pressed', settings.human === 'b');
+    for (let d = 1; d <= 4; d++) {
+      const button = $('lvl' + d);
+      button.setAttribute('aria-pressed', settings.depth === d);
+      button.disabled = settings.mode !== 'ai';
+    }
+    $('optWhite').disabled = $('optBlack').disabled = settings.mode !== 'ai';
+    $('levelNote').textContent = settings.mode === 'ai' ? LEVELS[settings.depth] : 'Two players take turns on this board.';
+    $('undo').disabled = game.ucis.length === 0;
+    $('resign').disabled = !!game.result || game.ucis.length === 0;
+  }
+
+  // ---------------------------------------------------------------
+  // Buttons
+  // ---------------------------------------------------------------
+
+  let resignTimer = 0;
+
+  function resign() {
+    const button = $('resign');
+    if (!button.classList.contains('danger-armed')) {
+      // Ask for a second press instead of a browser dialog
+      button.classList.add('danger-armed');
+      button.textContent = 'Confirm resign';
+      clearTimeout(resignTimer);
+      resignTimer = setTimeout(disarmResign, 3000);
+      return;
+    }
+    disarmResign();
+    const loser = game.settings.mode === 'ai' ? game.settings.human : game.board.turn;
+    const winner = E.opposite(loser);
+    endGame(winner === 'w' ? '1-0' : '0-1', resultTitle(winner), 'by resignation');
+    render();
+    save();
+  }
+
+  function disarmResign() {
+    clearTimeout(resignTimer);
+    $('resign').classList.remove('danger-armed');
+    $('resign').textContent = 'Resign';
+  }
+
+  function pgn() {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+    const result = game.result ? game.result.result : '*';
+    const headers = [
+      '[Event "Casual game"]',
+      '[Site "Minimax Chess"]',
+      '[Date "' + date + '"]',
+      '[White "' + nameFor('w') + '"]',
+      '[Black "' + nameFor('b') + '"]',
+      '[Result "' + result + '"]'
+    ];
+    const moves = [];
+    game.sans.forEach((san, i) => moves.push((i % 2 === 0 ? i / 2 + 1 + '. ' : '') + san));
+    moves.push(result);
+    return headers.join('\n') + '\n\n' + moves.join(' ');
+  }
+
+  function copyPgn() {
+    const text = pgn();
+    const done = () => toast('PGN copied');
+    try {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text));
+    } catch (error) {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (error) { ok = false; }
+    area.remove();
+    toast(ok ? 'PGN copied' : 'Copy failed. Open "Position as FEN" to copy the position instead.');
+  }
+
+  function toast(message) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.textContent = message;
+    document.body.append(el);
+    setTimeout(() => el.remove(), 1800);
+  }
+
+  // ---------------------------------------------------------------
+  // Saving: the game in progress survives a reload
+  // ---------------------------------------------------------------
+
+  function snapshot() {
+    return { settings: { ...settings }, gameSettings: { ...game.settings }, ucis: [...game.ucis], flipped, result: game.result };
+  }
+
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())); } catch (error) { /* storage unavailable */ }
+  }
+
+  function restore(data) {
+    if (!data || !data.gameSettings) return false;
+    Object.assign(settings, data.settings || {});
+    game = newGameState(data.gameSettings);
+    for (const uci of data.ucis || []) {
+      const move = game.board.legalMoves().find((m) => E.toUci(m) === uci);
+      if (!move) break;
+      game.sans.push(E.toSan(game.board, move));
+      game.ucis.push(uci);
+      game.board.makeMove(move);
+      game.keys.push(game.board.positionKey());
+    }
+    flipped = !!data.flipped;
+    if (data.result) endGame(data.result.result, data.result.title, data.result.text);
+    return true;
+  }
+
+  // ---------------------------------------------------------------
+  // Start up
+  // ---------------------------------------------------------------
+
+  function start(hotData) {
+    $('brandIcon').src = pieceSrc('N');
+    buildBoard();
+
+    let restored = false;
+    if (hotData && hotData.gameSettings) {
+      restored = restore(hotData);
+    } else {
+      try { restored = restore(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')); } catch (error) { restored = false; }
+    }
+    if (!restored) {
+      game = newGameState(settings);
+      // Open on a sample opening so the board shows what the game looks like
+      for (const uci of ['e2e4', 'e7e5', 'g1f3', 'b8c6']) {
+        const move = game.board.legalMoves().find((m) => E.toUci(m) === uci);
+        game.sans.push(E.toSan(game.board, move));
+        game.ucis.push(uci);
+        game.board.makeMove(move);
+        game.keys.push(game.board.positionKey());
+      }
+      $('detail').textContent = 'Example opening loaded. Your move, or press New game for a fresh board.';
+    }
+
+    const board = $('board');
+    board.addEventListener('pointerdown', onPointerDown);
+    board.addEventListener('pointermove', onPointerMove);
+    board.addEventListener('pointerup', onPointerUp);
+    board.addEventListener('pointercancel', onPointerUp);
+    board.addEventListener('keydown', onKeyDown);
+
+    for (const button of document.querySelectorAll('[data-mode]')) {
+      button.addEventListener('click', () => { settings.mode = button.dataset.mode; renderControls(); save(); });
+    }
+    for (const button of document.querySelectorAll('[data-color]')) {
+      button.addEventListener('click', () => { settings.human = button.dataset.color; renderControls(); save(); });
+    }
+    for (const button of document.querySelectorAll('[data-depth]')) {
+      button.addEventListener('click', () => {
+        settings.depth = Number(button.dataset.depth);
+        // A level change applies to the current game too, since it only changes search depth
+        if (game.settings.mode === 'ai') game.settings.depth = settings.depth;
+        renderControls();
+        save();
+      });
+    }
+    $('newGame').addEventListener('click', startNewGame);
+    $('overlayAgain').addEventListener('click', startNewGame);
+    $('overlayReview').addEventListener('click', () => { $('overlay').hidden = true; });
+    $('promoCancel').addEventListener('click', () => { $('promo').hidden = true; clearSelection(); render(); });
+    $('undo').addEventListener('click', undo);
+    $('flip').addEventListener('click', () => { flipped = !flipped; render(); save(); });
+    $('resign').addEventListener('click', resign);
+    $('copyPgn').addEventListener('click', copyPgn);
+
+    render();
+    if (isAiTurn()) requestAiMove();
+  }
+
+  window.claude?.hot?.snapshot?.(() => snapshot());
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
+</body>
+</html>
